@@ -1,0 +1,45 @@
+{
+  "name": "日记本",
+  "short_name": "日记本",
+  "version": "1.0.1",
+  "description": "会翻页的手写日记本：支持手写、图片转素描、按日期回看与批改、可上锁、可导出 Word/PDF。",
+  "lang": "zh-CN",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#2a1810",
+  "theme_color": "#6b4226",
+  "categories": ["lifestyle", "productivity", "books"],
+  "dir": "ltr",
+  "icons": [
+    { "src": "assets/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icons/icon-apple-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ],
+  "shortcuts": [
+    {
+      "name": "写今天的日记",
+      "short_name": "写日记",
+      "url": "./index.html?action=write",
+      "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "翻看日历",
+      "short_name": "日历",
+      "url": "./index.html?action=calendar",
+      "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "手写一页",
+      "short_name": "手写",
+      "url": "./index.html?action=handwrite",
+      "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "file_handlers": [],
+  "prefer_related_applications": false
+}

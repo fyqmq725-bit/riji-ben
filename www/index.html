@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>日记本 · 会翻页的手写日记</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="description" content="可以插入图片、像真实日记本一样翻页、支持手写与字体转手写、按日期回看与批改、可上锁的离线日记 App。" />
+<meta name="theme-color" content="#6b4226" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="日记本" />
+<meta name="format-detection" content="telephone=no" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
+<link rel="stylesheet" href="css/tokens.css" />
+<link rel="stylesheet" href="css/app.css" />
+<link rel="stylesheet" href="css/panel.css" />
+</head>
+<body class="booting">
+
+<!-- ===================== 启动画面 ===================== -->
+<div id="splash" class="splash">
+  <div class="splash-book">
+    <div class="splash-page left"></div>
+    <div class="splash-page right"></div>
+    <div class="splash-spine"></div>
+  </div>
+  <h1 class="splash-title">日 记 本</h1>
+  <p class="splash-sub">写下今天，翻回从前</p>
+  <div class="splash-bar"><span></span></div>
+  <p class="splash-tip" id="splashTip">正在准备纸张与墨水…</p>
+</div>
+
+<!-- 存储 / 打开方式 提示条（由 app.js 按需显示） -->
+<div id="storageBanner" class="storage-banner hidden" role="status"></div>
+
+<!-- ===================== 登录 / 注册 ===================== -->
+<div id="authScreen" class="auth-screen hidden">
+  <div class="auth-card">
+    <div class="auth-logo">日</div>
+    <h1 class="auth-title">日记本</h1>
+    <p class="auth-sub" id="authSub">用邮箱登录，每个邮箱一套独立的日记</p>
+
+    <div class="auth-tabs" role="tablist">
+      <button class="auth-tab active" data-mode="login" role="tab">登录</button>
+      <button class="auth-tab" data-mode="register" role="tab">注册</button>
+    </div>
+
+    <form id="authForm" class="auth-form" autocomplete="on" novalidate>
+      <label class="field">
+        <span class="field-label">邮箱</span>
+        <input type="email" id="authEmail" name="email" inputmode="email" autocomplete="username"
+               placeholder="you@example.com" required />
+      </label>
+
+      <label class="field">
+        <span class="field-label">密码</span>
+        <span class="field-input-wrap">
+          <input type="password" id="authPassword" name="password" autocomplete="current-password"
+                 placeholder="至少 6 位" required />
+          <button type="button" class="eye-btn" id="togglePwd" aria-label="显示密码">👁</button>
+        </span>
+      </label>
+
+      <div class="field" id="registerOnly" hidden>
+        <label class="field">
+          <span class="field-label">昵称（可选）</span>
+          <input type="text" id="authNickname" name="nickname" placeholder="怎么称呼你" maxlength="16" />
+        </label>
+        <label class="field">
+          <span class="field-label">确认密码</span>
+          <input type="password" id="authPassword2" name="password2" placeholder="再输入一次" />
+        </label>
+        <div class="pwd-meter"><span id="pwdMeterBar"></span></div>
+        <p class="field-hint" id="pwdHint">密码强度：—</p>
+      </div>
+
+      <p class="auth-error" id="authError" role="alert" hidden></p>
+      <button type="submit" class="btn btn-primary btn-block" id="authSubmit">进入我的日记本</button>
+    </form>
+
+    <div class="auth-foot">
+      <button class="link-btn" id="btnAccounts">切换已保存的账号</button>
+      <span class="dot">·</span>
+      <button class="link-btn" id="btnLocalOnly">先离线试用（不登录）</button>
+    </div>
+    <p class="auth-note">
+      🔒 账号与日记数据只保存在这台设备上（IndexedDB），不会上传到任何服务器。
+      上锁的日记使用 AES-GCM 加密，忘记密码无法找回。
+    </p>
+  </div>
+</div>
+
+<!-- 应用背景层（用户自定义背景图 / AI 素描背景） -->
+<div id="bgLayer" class="bg-layer" aria-hidden="true"></div>
+
+<!-- ===================== 主界面 ===================== -->
+<div id="app" class="app hidden">
+
+  <!-- 顶栏 -->
+  <header class="topbar" id="topbar">
+    <button class="icon-btn" id="btnMenu" aria-label="菜单">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+    </button>
+
+    <div class="topbar-center">
+      <button class="date-chip" id="btnCalendar" aria-label="打开日历">
+        <span class="date-main" id="dateMain">2025年1月1日</span>
+        <span class="date-sub" id="dateSub">周三 · 腊月初二</span>
+      </button>
+    </div>
+
+    <button class="icon-btn" id="btnSearchTop" aria-label="搜索">
+      <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </header>
+
+  <!-- 天气 + 时间条 -->
+  <div class="weather-bar" id="weatherBar">
+    <div class="weather-icon" id="weatherIcon"></div>
+    <div class="weather-text">
+      <div class="weather-line1"><span id="weatherTemp">--°</span><span id="weatherDesc">天气加载中</span></div>
+      <div class="weather-line2" id="weatherMeta">—</div>
+    </div>
+    <div class="weather-clock">
+      <div class="clock-time" id="clockTime">--:--</div>
+      <div class="clock-date" id="clockDate">--</div>
+    </div>
+  </div>
+
+  <!-- 翻页舞台 -->
+  <main class="stage" id="stage">
+    <div class="book-shadow"></div>
+    <div class="book" id="book">
+      <div class="page page-current" id="pageCurrent"></div>
+      <div class="page page-under" id="pageUnder"></div>
+      <div class="book-spine"></div>
+      <div class="flip-layer" id="flipLayer"></div>
+    </div>
+
+    <button class="nav-arrow nav-prev" id="btnPrev" aria-label="上一篇">
+      <svg viewBox="0 0 24 24" width="24" height="24"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="nav-arrow nav-next" id="btnNext" aria-label="下一篇">
+      <svg viewBox="0 0 24 24" width="24" height="24"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
+    <div class="page-indicator" id="pageIndicator"></div>
+  </main>
+
+  <!-- 底部操作栏 -->
+  <nav class="dock" id="dock">
+    <button class="dock-btn" id="btnCalendar2">
+      <svg viewBox="0 0 24 24" width="22" height="22"><rect x="3.5" y="5" width="17" height="15" rx="3" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
+      <span>日历</span>
+    </button>
+    <button class="dock-btn" id="btnEdit">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 20h4L19 9l-4-4L4 16v4z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/><path d="M14 6l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span>写日记</span>
+    </button>
+    <button class="dock-btn dock-main" id="btnWriteHand">
+      <svg viewBox="0 0 24 24" width="26" height="26"><path d="M3 19c3-1 5-6 8-6s4 4 7 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M17.5 3.5l3 3-8.5 8.5-4 1 1-4z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/></svg>
+      <span>手写</span>
+    </button>
+    <button class="dock-btn" id="btnImage">
+      <svg viewBox="0 0 24 24" width="22" height="22"><rect x="3.5" y="5" width="17" height="14" rx="3" stroke="currentColor" stroke-width="1.8" fill="none"/><circle cx="9" cy="10" r="1.6" fill="currentColor"/><path d="M5 17l4.5-4.5 3 3L16 12l3 3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>图片</span>
+    </button>
+    <button class="dock-btn" id="btnAI">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/><path d="M18 16l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor"/></svg>
+      <span>AI</span>
+    </button>
+    <button class="dock-btn" id="btnMore">
+      <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="5.5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="18.5" cy="12" r="1.8" fill="currentColor"/></svg>
+      <span>更多</span>
+    </button>
+  </nav>
+</div>
+
+<!-- 全局挂载点 -->
+<div id="sheetRoot"></div>
+<div id="modalRoot"></div>
+<div id="toastRoot" class="toast-host"></div>
+<div id="progressRoot"></div>
+
+<noscript>
+  <div style="padding:24px;font-family:sans-serif">日记本需要开启 JavaScript 才能运行。</div>
+</noscript>
+
+<script>window.__RIJI_VERSION__ = "1.0.1"; window.__RIJI_BUILD__ = "20261015095923";</script>
+<!-- 单文件版：把全部逻辑打进 bundle.js，这样用 file:// 双击 index.html 也能直接运行 -->
+<script src="bundle.js"></script>
+</body>
+</html>
