@@ -1,4 +1,4 @@
-/* 日记本 v1.0.1 — 构建于 20261019015042（由 tools/build-app.mjs 自动生成，请勿手工修改） */
+/* 日记本 v1.0.1 — 构建于 20261019035553（由 tools/build-app.mjs 自动生成，请勿手工修改） */
 (function () {
 'use strict';
 var __defs = {};
@@ -4463,6 +4463,37 @@ var { "lockScroll": lockScroll, "unlockScroll": unlockScroll, "resetScrollLock":
 
 const stack_ui_modal = [];
 
+/* ---------------------------- 返回键 / 历史 ---------------------------- */
+/**
+ * 弹层与系统返回键（Android 的返回手势/按键）的配合：
+ *  · 打开弹层时往历史里压一条记录；
+ *  · 用户按返回键 → 关掉最上层弹层，而不是直接退出 App；
+ *  · 用户点页面里的关闭按钮 → 主动消费掉那条历史记录，避免历史越积越多。
+ */
+const HISTORY_FLAG_ui_modal = '__rijiOverlay';
+let consumeCount_ui_modal = 0;
+
+function pushOverlayHistory_ui_modal() {
+  try { history.pushState({ [HISTORY_FLAG_ui_modal]: Date.now() }, ''); } catch { /* 忽略 */ }
+}
+
+function consumeOverlayHistory_ui_modal() {
+  try {
+    if (history.state && history.state[HISTORY_FLAG_ui_modal]) {
+      consumeCount_ui_modal++;
+      history.back();
+    }
+  } catch { /* 忽略 */ }
+}
+
+try {
+  window.addEventListener('popstate', () => {
+    if (consumeCount_ui_modal > 0) { consumeCount_ui_modal--; return; }
+    const top = stack_ui_modal[stack_ui_modal.length - 1];
+    if (top) { try { top.close(); } catch { /* 忽略 */ } }
+  });
+} catch { /* 忽略 */ }
+
 /** 同一时刻只允许一层弹层：先关掉已有的，避免面板叠层造成误操作 */
 function closeAllOverlays_ui_modal() {
   while (stack_ui_modal.length) {
@@ -4480,7 +4511,14 @@ function closeAllOverlays_ui_modal() {
 /* ------------------------------- 模态框 -------------------------------- */
 
 function openModal_ui_modal({ title = '', content = null, actions = null, maxWidth = 420, dismissible = true, onClose = null, className = '' }) {
-  closeAllOverlays_ui_modal();
+  // 对话框可以浮在面板之上（例如在「我的」页里弹「改昵称」），
+  // 只关掉其它对话框，不要连下面的页面一起关掉。
+  for (let i = stack_ui_modal.length - 1; i >= 0; i--) {
+    if (stack_ui_modal[i].type === 'modal') {
+      try { stack_ui_modal[i].close(); } catch { stack_ui_modal.splice(i, 1); }
+    }
+  }
+  document.querySelectorAll('.modal-overlay').forEach((n) => n.remove());
   const overlay = el('div', { class: 'modal-overlay' });
   const box = el('div', { class: `modal-box ${className}`.trim(), style: maxWidth ? { maxWidth: `${maxWidth}px` } : {} });
   if (title) box.appendChild(el('h3', { class: 'modal-title', text: title }));
@@ -4492,7 +4530,8 @@ function openModal_ui_modal({ title = '', content = null, actions = null, maxWid
 
   const entry = { overlay, close: (result) => closeModal_ui_modal(entry, result), type: 'modal' };
   stack_ui_modal.push(entry);
-  lockScroll();   // 弹层期间锁住背景页面，避免手指一划整页跟着动
+  lockScroll();         // 弹层期间锁住背景页面，避免手指一划整页跟着动
+  pushOverlayHistory_ui_modal(); // 返回键先关弹层
 
   const onBackdrop = (e) => { if (e.target === overlay && dismissible) entry.close(); };
   overlay.addEventListener('click', onBackdrop);
@@ -4507,7 +4546,8 @@ function openModal_ui_modal({ title = '', content = null, actions = null, maxWid
     const idx = stack_ui_modal.indexOf(entry);
     if (idx >= 0) stack_ui_modal.splice(idx, 1);
     unlockScroll();   // 关闭后恢复页面滚动
-    onClose?.();
+    consumeOverlayHistory_ui_modal();
+    onClose?.(entry._result);   // 把结果交给 onClose，否则 promptDialog 拿不到输入值
   };
   return { overlay, box, close: entry.close };
 }
@@ -4529,21 +4569,29 @@ function closeTopOverlay_ui_modal() {
 function openSheet_ui_modal({
   title = '', subtitle = '', body = null, footer = null, size = 'auto',
   dismissible = true, onClose = null, headExtra = null, showGrab = true, bodyClass = '',
+  /** 全屏页面模式：铺满整屏、无圆角、不可下滑关闭、关闭按钮变成返回箭头 */
+  fullscreen = false,
 }) {
   closeAllOverlays_ui_modal();
-  const overlay = el('div', { class: 'sheet-overlay' });
-  const panel = el('div', { class: `sheet-panel ${size === 'tall' ? 'tall' : size === 'half' ? 'half' : ''}`.trim() });
-  if (showGrab) panel.appendChild(el('div', { class: 'sheet-grab' }));
+  const overlay = el('div', { class: `sheet-overlay${fullscreen ? ' fullscreen' : ''}` });
+  const sizeClass = fullscreen ? 'fullscreen' : (size === 'tall' ? 'tall' : size === 'half' ? 'half' : '');
+  const panel = el('div', { class: `sheet-panel ${sizeClass}`.trim() });
+  if (showGrab && !fullscreen) panel.appendChild(el('div', { class: 'sheet-grab' }));
 
-  const head = el('div', { class: 'sheet-head' }, [
-    el('div', {}, [
-      el('h2', { text: title }),
-      subtitle ? el('div', { class: 'sub', text: subtitle }) : null,
-    ]),
-    el('div', { class: 'spacer' }),
-    headExtra || null,
-    el('button', { class: 'icon-btn', html: '✕', 'aria-label': '关闭', onclick: () => entry.close() }),
+  const closeBtn = el('button', {
+    class: `icon-btn${fullscreen ? ' sheet-back' : ''}`,
+    html: fullscreen ? '←' : '✕',
+    'aria-label': fullscreen ? '返回' : '关闭',
+    onclick: () => entry.close(),
+  });
+  const titleBox = el('div', { class: 'sheet-head-text' }, [
+    el('h2', { text: title }),
+    subtitle ? el('div', { class: 'sub', text: subtitle }) : null,
   ]);
+  // 全屏页面按 App 习惯把返回箭头放左上角；普通面板仍是右上角关闭
+  const head = el('div', { class: 'sheet-head' }, fullscreen
+    ? [closeBtn, titleBox, el('div', { class: 'spacer' }), headExtra || null]
+    : [titleBox, el('div', { class: 'spacer' }), headExtra || null, closeBtn]);
   panel.appendChild(head);
 
   const bodyNode = el('div', { class: `sheet-body-scroll ${bodyClass}`.trim() });
@@ -4562,14 +4610,15 @@ function openSheet_ui_modal({
     }, type: 'sheet',
   };
   stack_ui_modal.push(entry);
-  lockScroll();   // 面板打开期间锁住背景页面
+  lockScroll();        // 面板打开期间锁住背景页面
+  pushOverlayHistory_ui_modal(); // 让系统返回键先关弹层，而不是直接退出 App
 
-  // 下滑关闭（仅当面板内容滚到顶部时）
+  // 下滑关闭（仅当面板内容滚到顶部时）。全屏页面不启用，避免整页被拖走。
   let startY = null;
   let startX = null;
   let dragging = false;
   const onTouchStart = (e) => {
-    if (!dismissible) return;
+    if (fullscreen || !dismissible) return;
     if (bodyNode.scrollTop > 2) { startY = null; return; }
     const t = e.touches[0];
     startY = t.clientY; startX = t.clientX; dragging = false;
@@ -4608,6 +4657,7 @@ function openSheet_ui_modal({
     const idx = stack_ui_modal.indexOf(entry);
     if (idx >= 0) stack_ui_modal.splice(idx, 1);
     unlockScroll();
+    consumeOverlayHistory_ui_modal();   // 清掉打开时压入的那条历史记录
     onClose?.(entry._result);
   };
   return entry;
@@ -4730,17 +4780,18 @@ function promptDialog_ui_modal({
       title,
       content: field,
       actions: [
-        el('button', { class: 'btn btn-ghost', text: '取消', onclick: () => { modal.close(null); resolve(null); } }),
+        el('button', { class: 'btn btn-ghost', text: '取消', onclick: () => modal.close(null) }),
         el('button', {
           class: 'btn btn-primary', text: okText,
-          onclick: () => { modal.close(input.value); resolve(input.value); },
+          onclick: () => modal.close(input.value),
         }),
       ],
-      onClose: () => resolve(null),
+      // 统一在这里解析：用户点确定 → 拿到输入值；取消/返回键/点遮罩 → null
+      onClose: (result) => resolve(result == null ? null : result),
     });
     setTimeout(() => input.focus(), 120);
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !multiline) { modal.close(input.value); resolve(input.value); }
+      if (e.key === 'Enter' && !multiline) { modal.close(input.value); }
     });
   });
 }
@@ -5764,6 +5815,7 @@ async function openDrawingBoard_ui_drawing(opts = {}) {
     title: opts.title || '手写 / 涂鸦',
     subtitle: '用手指或触控笔直接写，写完插入日记',
     size: 'tall',
+    fullscreen: true,   // 全屏页面
     body: el('div', { class: 'editor-wrap' }, [stage, tools]),
     footer: el('div', { class: 'sheet-foot' }, [
       el('button', {
@@ -6584,6 +6636,7 @@ async function openEditor_ui_editor(opts) {
     subtitle: `${dateKey} · 自动保存草稿`,
     size: 'tall',
     showGrab: false,
+    fullscreen: true,   // 全屏页面，不再是从底部升起的面板
     body: panelBody,
     footer: el('div', { class: 'sheet-foot' }, [
       el('button', {
@@ -7176,6 +7229,266 @@ class Flipbook_ui_flipbook {
 
 
 return { "$": $, "Flipbook": Flipbook_ui_flipbook };
+} };
+/* ================= js/ui/profile.js ================= */
+__defs["js/ui/profile.js"] = { exports: ["openProfilePage"], fn: function (module) {
+var { "el": el, "toast": toast, "clear": clear, "downloadBlob": downloadBlob, "safeFileName": safeFileName, "pickFiles": pickFiles, "formatCN": formatCN } = __m("js/core/utils.js");
+var { "openSheet": openSheet, "promptDialog": promptDialog, "showProgress": showProgress, "hideProgress": hideProgress, "confirmDialog": confirmDialog } = __m("js/ui/modal.js");
+var { "currentSession": currentSession, "listAccounts": listAccounts, "listEntries": listEntries, "getAccount": getAccount, "updateAccount": updateAccount, "changePassword": changePassword, "exportBackup": exportBackup, "importBackup": importBackup, "logout": logout, "storageInfo": storageInfo, "settingsGet": settingsGet } = __m("js/core/storage.js");
+/* ==========================================================================
+ * 日记本 · 「我的」页面
+ * 展示当前账号资料（昵称 / 邮箱 / 注册时间）、使用统计，
+ * 并提供改昵称、改密码、切换账号、备份导入导出、设置、退出登录等入口。
+ * ========================================================================== */
+
+
+
+
+// 设置页与自检页需要 app.js 注入的回调，这里通过 ctx 传入，避免重复接线
+
+const VERSION_ui_profile = (typeof window !== 'undefined' && window.__RIJI_VERSION__) || '1.0.1';
+
+function fmtBytes_ui_profile(bytes) {
+  if (!bytes || bytes < 0) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function fmtDate_ui_profile(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** 统计：日记篇数 / 总字数 / 图片张数 */
+function computeStats_ui_profile(entries) {
+  let words = 0;
+  let images = 0;
+  for (const e of entries) {
+    words += Number(e.wordCount) || 0;
+    images += (e.images?.length || 0) + (e.drawings?.length || 0);
+  }
+  return { entries: entries.length, words, images };
+}
+
+/** 当前登录账号 id（updateAccount / changePassword 都需要它） */
+function session2AccountId_ui_profile() {
+  const s = currentSession();
+  if (!s?.accountId) throw new Error('尚未登录');
+  return s.accountId;
+}
+
+function openProfilePage_ui_profile(ctx = {}) {
+  const session = currentSession() || {};
+  let account = null;
+  let stats = { entries: 0, words: 0, images: 0 };
+
+  const body = el('div', { class: 'profile' });
+  const sheet = openSheet({
+    title: '我的',
+    subtitle: '账号资料与使用统计',
+    fullscreen: true,
+    body,
+    onClose: () => { /* 关闭时无需额外处理 */ },
+  });
+
+  /* ------------------------------ 渲染 ------------------------------ */
+
+  const render = () => {
+    clear(body);
+    const nickname = account?.nickname || session.nickname || (session.email || '').split('@')[0] || '我';
+    const email = account?.email || session.email || '';
+    const initial = (nickname || '我').trim().slice(0, 1).toUpperCase();
+
+    /* 顶部资料卡 */
+    body.appendChild(el('div', { class: 'profile-hero' }, [
+      el('div', { class: 'profile-avatar', text: initial }),
+      el('div', { class: 'profile-meta' }, [
+        el('b', { text: nickname }),
+        el('span', { text: email }),
+        el('small', { text: `注册于 ${fmtDate_ui_profile(account?.createdAt)}` }),
+      ]),
+      el('button', {
+        class: 'btn btn-ghost btn-sm', text: '编辑',
+        onclick: () => editNickname(),
+      }),
+    ]));
+
+    /* 统计 */
+    body.appendChild(el('div', { class: 'profile-stats' }, [
+      el('div', {}, [el('b', { text: String(stats.entries) }), el('span', { text: '篇日记' })]),
+      el('div', {}, [el('b', { text: stats.words.toLocaleString('zh-CN') }), el('span', { text: '总字数' })]),
+      el('div', {}, [el('b', { text: String(stats.images) }), el('span', { text: '张图片' })]),
+    ]));
+
+    /* 条目 */
+    const item = (icon, title, desc, control) => el('div', { class: 'set-item' }, [
+      el('div', { class: 'info' }, [
+        el('b', { text: `${icon}  ${title}` }),
+        desc ? el('small', { text: desc }) : null,
+      ]),
+      el('div', { class: 'control' }, Array.isArray(control) ? control : [control]),
+    ]);
+
+    const group1 = el('div', { class: 'set-group' }, [
+      item('✏️', '昵称', nickname, el('button', {
+        class: 'btn btn-ghost btn-sm', text: '修改', onclick: () => editNickname(),
+      })),
+      item('🔑', '登录密码', '定期更换更安全', el('button', {
+        class: 'btn btn-ghost btn-sm', text: '修改密码', onclick: () => editPassword(),
+      })),
+      item('👥', '切换账号', `${stats.accounts || 0} 个已保存账号`, el('button', {
+        class: 'btn btn-ghost btn-sm', text: '切换', onclick: () => switchAccount(),
+      })),
+    ]);
+
+    const group2 = el('div', { class: 'set-group' }, [
+      item('📤', '导出全部数据', '生成 JSON 备份，换手机时用', el('button', {
+        class: 'btn btn-ghost btn-sm', text: '导出', onclick: () => doExport(),
+      })),
+      item('📥', '导入数据备份', '会与现有日记合并', el('button', {
+        class: 'btn btn-ghost btn-sm', text: '导入', onclick: () => doImport(),
+      })),
+    ]);
+
+    const group3 = el('div', { class: 'set-group' }, [
+      item('🎨', '个性化设置', '主题 / 背景 / 字体 / 天气', el('button', {
+        class: 'btn btn-ghost btn-sm', text: '打开', onclick: () => { sheet.close(); ctx.onOpenSettings?.(); },
+      })),
+      item('🩺', '功能自检', '检查各项能力是否正常', el('button', {
+        class: 'btn btn-ghost btn-sm', text: '自检',
+        onclick: async () => {
+          sheet.close();
+          const { openDiagnostics } = await __m("js/ui/diagnostics.js");
+          openDiagnostics({ settings: await settingsGet() });
+        },
+      })),
+      item('ℹ️', '关于日记本', `版本 ${VERSION_ui_profile} · 数据只存在本机`, el('span', { class: 'profile-ver', text: VERSION_ui_profile })),
+    ]);
+
+    body.append(group1, group2, group3);
+
+    /* 退出登录 */
+    body.appendChild(el('button', {
+      class: 'btn btn-danger profile-logout', text: '退出登录',
+      onclick: () => doLogout(),
+    }));
+    body.appendChild(el('p', {
+      class: 'profile-tip',
+      text: '日记与图片只保存在这台设备上，不会上传到任何服务器。卸载或清除浏览器数据会丢失，请定期导出备份。',
+    }));
+  };
+
+  /* ------------------------------ 动作 ------------------------------ */
+
+  async function editNickname() {
+    const cur = account?.nickname || '';
+    const next = await promptDialog({
+      title: '修改昵称',
+      label: '昵称',
+      value: cur,
+      placeholder: '给自己起个名字',
+      maxLength: 20,
+    });
+    if (next == null) return;
+    const name = String(next).trim();
+    if (!name) { toast('昵称不能为空', { type: 'warn' }); return; }
+    await updateAccount(session2AccountId_ui_profile(), { nickname: name });
+    account = { ...account, nickname: name };
+    toast('昵称已更新', { type: 'success' });
+    render();
+  }
+
+  async function editPassword() {
+    const oldPwd = await promptDialog({ title: '修改密码', label: '当前密码', type: 'password' });
+    if (oldPwd == null) return;
+    const newPwd = await promptDialog({ title: '修改密码', label: '新密码（至少 6 位）', type: 'password' });
+    if (newPwd == null) return;
+    if (String(newPwd).length < 6) { toast('新密码至少 6 位', { type: 'warn' }); return; }
+    try {
+      await changePassword(session2AccountId_ui_profile(), oldPwd, newPwd);
+      toast('密码已修改', { type: 'success' });
+    } catch (err) {
+      toast(`修改失败：${err.message}`, { type: 'error' });
+    }
+  }
+
+  async function switchAccount() {
+    const accounts = await listAccounts();
+    if (!accounts.length) { toast('还没有其它账号', { type: 'warn' }); return; }
+    sheet.close();
+    // 交给设置页的账号面板处理（已有完整逻辑）
+    ctx.onOpenSettings?.();
+  }
+
+  async function doExport() {
+    const progress = showProgress({ title: '正在打包备份…' });
+    try {
+      const payload = await exportBackup({ includeImages: true });
+      const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+      hideProgress();
+      downloadBlob(blob, safeFileName(`日记本备份-${new Date().toISOString().slice(0, 10)}.json`, 'backup.json'));
+      toast('备份已导出', { type: 'success' });
+    } catch (err) {
+      hideProgress();
+      toast(`导出失败：${err.message}`, { type: 'error' });
+    }
+  }
+
+  async function doImport() {
+    const files = await pickFiles({ accept: 'application/json,.json' });
+    if (!files[0]) return;
+    const progress = showProgress({ title: '正在导入…' });
+    try {
+      const text = await files[0].text();
+      const res = await importBackup(JSON.parse(text), { overwrite: true });
+      hideProgress();
+      toast(`已导入 ${res.entries} 篇日记`, { type: 'success' });
+      await load();
+      render();
+    } catch (err) {
+      hideProgress();
+      toast(`导入失败：${err.message}`, { type: 'error' });
+    }
+  }
+
+  async function doLogout() {
+    const ok = await confirmDialog('日记不会被删除，下次用同一邮箱登录即可继续写。', {
+      title: '退出登录？',
+      okText: '退出',
+      danger: true,
+    });
+    if (!ok) return;
+    logout();
+    location.reload();
+  }
+
+  /* ------------------------------ 载入 ------------------------------ */
+
+  async function load() {
+    const session2 = currentSession() || {};
+    account = session2.accountId ? await getAccount(session2.accountId) : null;
+    const entries = (await listEntries()).filter(Boolean);
+    stats = computeStats_ui_profile(entries);
+    try {
+      stats.accounts = (await listAccounts()).length;
+      const info = storageInfo();
+      stats.usage = info?.usageBytes || 0;
+    } catch { /* 忽略 */ }
+  }
+
+  load().then(render).catch((err) => {
+    clear(body);
+    body.appendChild(el('p', { class: 'field-hint', text: `加载失败：${err.message}` }));
+  });
+
+  return sheet;
+}
+
+return { "openProfilePage": openProfilePage_ui_profile };
 } };
 /* ================= js/ui/sheet.js ================= */
 __defs["js/ui/sheet.js"] = { exports: ["toast","htmlToText","relativeCN","imageObjectURL","revokeImageURLs","renderDiaryPage","sanitizeBody","hydrateBodyImages","renderLockedPage","verifyLockPassword","weatherBadge","isUnlocked"], fn: function (module) {
@@ -8233,6 +8546,7 @@ var { "loadPdfFont": loadPdfFont } = __m("js/features/export.js");
 var { "openCalendar": openCalendar, "openSearch": openSearch, "streak": streak } = __m("js/ui/calendar.js");
 var { "openEditor": openEditor } = __m("js/ui/editor.js");
 var { "openSettings": openSettings } = __m("js/ui/settings.js");
+var { "openProfilePage": openProfilePage } = __m("js/ui/profile.js");
 var { "openExportCenter": openExportCenter } = __m("js/ui/export-ui.js");
 var { "openSheet": openSheet, "openModal": openModal, "showProgress": showProgress, "hideProgress": hideProgress, "promptDialog": promptDialog, "pickOption": pickOption, "openImageViewer": openImageViewer } = __m("js/ui/modal.js");
 var { "openDrawingBoard": openDrawingBoard } = __m("js/ui/drawing.js");
@@ -8246,6 +8560,7 @@ var { "makeThumbnail": makeThumbnail, "dominantColor": dominantColor, "loadImage
  * 日记本 · 主程序
  *  启动流程 / 邮箱登录 / 翻页日记 / 编辑与保存 / 上锁 / 天气 / 主题
  * ========================================================================== */
+
 
 
 
@@ -9303,7 +9618,7 @@ function bindGlobalUI_app() {
   });
   $('#btnAI')?.addEventListener('click', () => openAIMenu_app());
   $('#btnMore')?.addEventListener('click', () => openMoreMenu_app());
-  $('#btnMenu')?.addEventListener('click', () => openSettings({
+  const openMenuSettings = () => openSettings({
     getFontStack: async (styleId) => fontStackFor({ ...state_app.settings, handwriting: { ...state_app.settings.handwriting, styleId } }, state_app.userFonts),
     onChanged: async (settings, patch) => {
       state_app.settings = settings;
@@ -9336,6 +9651,12 @@ function bindGlobalUI_app() {
       await refreshEntries_app();
       renderCurrent_app({ animate: false });
     },
+  });
+
+  $('#btnMenu')?.addEventListener('click', () => openMenuSettings());
+  // 「我的」：账号资料 / 统计 / 备份 / 退出
+  $('#btnProfile')?.addEventListener('click', () => openProfilePage({
+    onOpenSettings: () => openMenuSettings(),
   }));
 
   // 自动重新上锁

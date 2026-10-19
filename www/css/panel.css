@@ -4,7 +4,8 @@
 
 /* ============================ 模态与面板基座 ============================ */
 .modal-overlay {
-  position: fixed; inset: 0; z-index: 7000;
+  /* 必须高于 .sheet-overlay(7100)，否则在「我的」等全屏页面里弹出的对话框会被页面盖住 */
+  position: fixed; inset: 0; z-index: 7150;
   display: flex; align-items: center; justify-content: center; padding: 20px;
   background: rgba(30, 22, 14, 0.44); backdrop-filter: blur(4px);
   opacity: 0; transition: opacity 0.26s;
@@ -407,6 +408,53 @@ html.keyboard-open .editor-canvas-wrap { padding-bottom: 40px; }
 .empty-state h4 { margin: 0 0 6px; font-size: 15px; color: var(--text-2); }
 .empty-state p { margin: 0; font-size: 12.5px; line-height: 1.8; }
 
+/* ====================== 全屏页面模式（写日记 / 手写 / 我的） ======================
+ * 用 openSheet({ fullscreen: true }) 打开：
+ *   · 铺满整屏、无圆角、无阴影，看起来就是一个独立页面
+ *   · 不再从底部升起、也不能往下拖走
+ *   · 头部右上角变成返回箭头 ← ，配合系统返回键一起用
+ */
+.sheet-overlay.fullscreen {
+  align-items: stretch;
+  justify-content: stretch;
+  background: var(--surface-solid);
+  backdrop-filter: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.sheet-overlay.fullscreen.show { opacity: 1; }
+
+.sheet-panel.fullscreen {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: 100%;
+  flex: 1 1 auto;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding-top: env(safe-area-inset-top);
+  transform: translateY(10px);
+  transition: transform 0.22s var(--ease-out), opacity 0.18s ease;
+}
+.sheet-overlay.fullscreen.show .sheet-panel.fullscreen { transform: none; }
+
+.sheet-panel.fullscreen .sheet-head { padding: 10px 14px; gap: 6px; }
+.sheet-panel.fullscreen .sheet-head h2 { font-size: 17px; }
+.sheet-panel.fullscreen .sheet-back {
+  width: 44px; height: 44px;
+  font-size: 22px; line-height: 1;
+  margin-right: -6px;
+}
+.sheet-panel.fullscreen .sheet-body-scroll {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 700px) {
+  .sheet-overlay.fullscreen { align-items: stretch; padding: 0; }
+  .sheet-panel.fullscreen { border-radius: 0; border: none; max-height: none; }
+}
+
 /* ====================== 弹层打开时的滚动锁 ====================== */
 html.scroll-locked { overflow: hidden; }
 html.scroll-locked body {
@@ -417,3 +465,47 @@ html.scroll-locked body {
 html.scroll-locked .sheet-overlay,
 html.scroll-locked .modal-overlay,
 html.scroll-locked .viewer-overlay { overscroll-behavior: contain; }
+
+/* ============================== 「我的」页面 ============================== */
+.profile { display: flex; flex-direction: column; gap: 14px; }
+
+.profile-hero {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px; border-radius: 18px;
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface-solid));
+  border: 1px solid var(--border);
+}
+.profile-avatar {
+  flex: 0 0 auto; width: 58px; height: 58px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 24px; font-weight: 700; color: #fff;
+  background: linear-gradient(150deg, var(--brand-2), var(--brand));
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--brand) 34%, transparent);
+}
+.profile-meta { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.profile-meta b { font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-meta span { font-size: 12.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-meta small { font-size: 11px; color: var(--text-3); }
+
+.profile-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.profile-stats > div {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 13px 6px; border-radius: 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--paper) 55%, transparent);
+}
+.profile-stats b { font-family: var(--font-num, inherit); font-size: 19px; line-height: 1.1; }
+.profile-stats span { font-size: 11.5px; color: var(--text-3); }
+
+.profile .set-group {
+  margin-bottom: 0;
+  border-radius: 16px; border: 1px solid var(--border);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-solid) 75%, transparent);
+}
+.profile .set-item { padding: 12px 14px; }
+.profile .set-item:last-child { border-bottom: none; }
+
+.profile-logout { width: 100%; margin-top: 2px; }
+.profile-tip { margin: 0; font-size: 11.5px; line-height: 1.75; color: var(--text-3); }
+.profile-ver { font-family: var(--font-num, inherit); font-size: 13px; color: var(--text-3); }

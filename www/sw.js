@@ -7,7 +7,7 @@
 
 // 打包时 tools/build-app.mjs 会把它替换成 riji-<版本>-<构建时间>，每次构建都不同，
 // 这样浏览器一定会拉新资源；源码调试时用这个值即可。
-const VERSION = 'riji-1.0.1-20261019015042';
+const VERSION = 'riji-1.0.1-20261019035553';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
