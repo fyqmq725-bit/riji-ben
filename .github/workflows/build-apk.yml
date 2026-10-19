@@ -11,6 +11,10 @@ jobs:
     # 发布到 Releases 需要写权限（默认是只读）
     permissions:
       contents: write
+    env:
+      # 注意：GitHub Actions 不允许在 if 条件里直接用 secrets，
+      # 必须先映射成环境变量，再在 if 里判断 env.*（否则整个 workflow 报 Invalid workflow file）
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +47,7 @@ jobs:
       # 在仓库 Secrets 里配置 KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD
       # 就会产出「正式签名版」；没配置则产出「调试版」，两者都能直接安装。
       - name: 写入签名配置
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        if: env.HAS_KEYSTORE == 'true'
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/riji.keystore
           cat >> android/app/build.gradle <<'EOF'
@@ -67,11 +71,11 @@ jobs:
           EOF
 
       - name: 构建调试版 APK
-        if: ${{ secrets.KEYSTORE_BASE64 == '' }}
+        if: env.HAS_KEYSTORE != 'true'
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
 
       - name: 构建正式签名版 APK
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        if: env.HAS_KEYSTORE == 'true'
         run: cd android && chmod +x gradlew && ./gradlew assembleRelease --no-daemon
 
       - name: 上传 APK
