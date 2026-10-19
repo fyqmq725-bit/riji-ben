@@ -21,7 +21,7 @@ jobs:
       - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: 安装 JDK 17
         uses: actions/setup-java@v4
@@ -29,14 +29,37 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: 安装 Android SDK
-        uses: android-actions/setup-android@v3
+      # ubuntu-latest 运行器已预装 Android SDK 与 commandline-tools，
+      # 不需要再装（android-actions/setup-android 曾在这里下载失败导致构建 7 秒就红）。
+      # 这里只做一次确认，万一环境变了也能自动兜底。
+      - name: 确认 Android SDK
+        run: |
+          if [ -z "$ANDROID_HOME" ] && [ -z "$ANDROID_SDK_ROOT" ]; then
+            for d in /usr/local/lib/android/sdk /opt/android-sdk "$HOME/Android/Sdk"; do
+              if [ -d "$d" ]; then
+                echo "ANDROID_HOME=$d" >> "$GITHUB_ENV"
+                echo "ANDROID_SDK_ROOT=$d" >> "$GITHUB_ENV"
+                break
+              fi
+            done
+          fi
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          echo "Android SDK: $SDK"
+          ls "$SDK" 2>/dev/null || true
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            echo "::error::找不到 Android SDK，无法继续编译"
+            exit 1
+          fi
 
       - name: 安装依赖
         run: npm install
 
       - name: 生成 Android 工程
         run: npx cap add android
+
+      # 明确告诉 Gradle SDK 在哪，避免 "SDK location not found"
+      - name: 写入 local.properties
+        run: echo "sdk.dir=${ANDROID_HOME:-$ANDROID_SDK_ROOT}" > android/local.properties
 
       - name: 同步网页资源
         run: npx cap sync android
@@ -88,6 +111,8 @@ jobs:
       # 额外发一份到 Releases：GitHub 的 Artifacts 必须登录才能下载，
       # 手机上下载很麻烦；发到 Releases 后，手机上点链接就能直接装。
       - name: 发布到 Releases（手机可直接下载安装）
+        # 发布失败不影响 apk：apk 已在上一步上传为 Artifact
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
